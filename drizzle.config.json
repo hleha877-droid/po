@@ -1,0 +1,7 @@
+{
+  "dialect": "postgresql",
+  "schema": "./src/db/schema.js",
+  "dbCredentials": {
+    "url": "${DATABASE_URL}"
+  }
+}
