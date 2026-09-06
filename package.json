@@ -5,6 +5,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "db:push": "drizzle-kit push --config=drizzle.config.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
