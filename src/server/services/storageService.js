@@ -5,8 +5,51 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import { Readable } from "node:stream";
 
 const ROOT = path.resolve(process.cwd(), process.env.STORAGE_DIR || "./storage");
+const PROVIDER = process.env.STORAGE_PROVIDER || "local";
+const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+function supabaseHeaders(extra = {}) {
+  return { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, ...extra };
+}
+
+function supabaseObjectUrl(bucket, key) {
+  return `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function assertSupabaseConfigured() {
+  if (!SUPABASE_URL || !SUPABASE_KEY) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for Supabase storage");
+}
+
+async function supabasePut(bucket, key, buffer) {
+  assertSupabaseConfigured();
+  const res = await fetch(supabaseObjectUrl(bucket, key), { method: "POST", headers: supabaseHeaders({ "Content-Type": "application/octet-stream", "x-upsert": "true" }), body: buffer });
+  if (!res.ok) throw new Error(`Supabase storage upload failed (${res.status})`);
+  return `${bucket}/${key}`;
+}
+
+async function supabaseGet(bucket, key) {
+  assertSupabaseConfigured();
+  const res = await fetch(supabaseObjectUrl(bucket, key), { headers: supabaseHeaders() });
+  if (!res.ok) throw new Error(`Supabase storage read failed (${res.status})`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+async function supabaseStat(bucket, key) {
+  assertSupabaseConfigured();
+  const res = await fetch(supabaseObjectUrl(bucket, key), { method: "HEAD", headers: supabaseHeaders() });
+  if (!res.ok) return null;
+  const size = Number(res.headers.get("content-length"));
+  return Number.isFinite(size) ? { size } : null;
+}
+
+async function supabaseRemove(bucket, key) {
+  assertSupabaseConfigured();
+  await fetch(supabaseObjectUrl(bucket, key), { method: "DELETE", headers: supabaseHeaders() });
+}
 
 function safeJoin(bucket, key) {
   const p = path.resolve(ROOT, bucket, key);
@@ -15,17 +58,20 @@ function safeJoin(bucket, key) {
 }
 
 export const storage = {
-  provider: process.env.STORAGE_PROVIDER || "local",
+  provider: PROVIDER,
   async put(bucket, key, buffer) {
+    if (PROVIDER === "supabase") return supabasePut(bucket, key, buffer);
     const p = safeJoin(bucket, key);
     await fsp.mkdir(path.dirname(p), { recursive: true });
     await fsp.writeFile(p, buffer);
     return `${bucket}/${key}`;
   },
   async get(bucket, key) {
+    if (PROVIDER === "supabase") return supabaseGet(bucket, key);
     return fsp.readFile(safeJoin(bucket, key));
   },
   async stat(bucket, key) {
+    if (PROVIDER === "supabase") return supabaseStat(bucket, key);
     try {
       const s = await fsp.stat(safeJoin(bucket, key));
       return { size: s.size };
@@ -34,14 +80,24 @@ export const storage = {
     }
   },
   async remove(bucket, key) {
+    if (PROVIDER === "supabase") return supabaseRemove(bucket, key);
     try {
       await fsp.unlink(safeJoin(bucket, key));
     } catch {}
   },
   createReadStream(bucket, key, opts) {
+    if (PROVIDER === "supabase") {
+      const start = opts?.start || 0;
+      const end = opts?.end;
+      return Readable.from((async function* () {
+        const buf = await supabaseGet(bucket, key);
+        yield end === undefined ? buf.subarray(start) : buf.subarray(start, end + 1);
+      })());
+    }
     return fs.createReadStream(safeJoin(bucket, key), opts);
   },
   absolutePath(bucket, key) {
+    if (PROVIDER === "supabase") throw new Error("Supabase storage does not have local paths");
     return safeJoin(bucket, key);
   },
   newKey(prefix, ext) {

@@ -31,8 +31,9 @@ Import this repository in Netlify. The included `netlify.toml` configures the Ne
 Add every variable from `.env.local` in **Site configuration → Environment variables**, but use a hosted PostgreSQL
 URL instead of `127.0.0.1`. Run `npx drizzle-kit push` locally with that hosted `DATABASE_URL` before the first launch.
 
-The default local storage driver is not persistent on Netlify. Use a persistent external storage driver before
-production use, otherwise uploaded PDFs and generated audio can disappear between function invocations.
+For Netlify, use the included Supabase Storage driver: set `STORAGE_PROVIDER=supabase`, create the `uploads`,
+`audio`, `covers` and `previews` buckets in Supabase, and add `SUPABASE_URL` plus the server-only
+`SUPABASE_SERVICE_ROLE_KEY` to Netlify. Keep the service-role key private.
 
 Optional services:
 
