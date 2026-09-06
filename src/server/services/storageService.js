@@ -6,6 +6,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
+import { ApiError } from "../lib/errors.js";
 
 const ROOT = path.resolve(process.cwd(), process.env.STORAGE_DIR || "./storage");
 const PROVIDER = process.env.STORAGE_PROVIDER || "local";
@@ -27,14 +28,14 @@ function assertSupabaseConfigured() {
 async function supabasePut(bucket, key, buffer) {
   assertSupabaseConfigured();
   const res = await fetch(supabaseObjectUrl(bucket, key), { method: "POST", headers: supabaseHeaders({ "Content-Type": "application/octet-stream", "x-upsert": "true" }), body: buffer });
-  if (!res.ok) throw new Error(`Supabase storage upload failed (${res.status})`);
+  if (!res.ok) throw new ApiError(503, "STORAGE_UNAVAILABLE", `Supabase bucket "${bucket}" upload failed (${res.status}). Create this bucket in Supabase Storage.`);
   return `${bucket}/${key}`;
 }
 
 async function supabaseGet(bucket, key) {
   assertSupabaseConfigured();
   const res = await fetch(supabaseObjectUrl(bucket, key), { headers: supabaseHeaders() });
-  if (!res.ok) throw new Error(`Supabase storage read failed (${res.status})`);
+  if (!res.ok) throw new ApiError(503, "STORAGE_UNAVAILABLE", `Supabase bucket "${bucket}" read failed (${res.status}). Check the bucket and server key.`);
   return Buffer.from(await res.arrayBuffer());
 }
 
